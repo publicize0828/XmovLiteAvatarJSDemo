@@ -19,10 +19,23 @@ class LlmService {
       return
     }
 
+    const baseURL = config.baseURL || LLM_CONFIG.BASE_URL
+    console.log('初始化LLM客户端:', { baseURL, model: config.model })
+
     this.openai = new OpenAI({
       apiKey: config.apiKey,
       dangerouslyAllowBrowser: true,
-      baseURL: config.baseURL || LLM_CONFIG.BASE_URL
+      baseURL: baseURL,
+      // 确保使用 fetch API 支持流式
+      fetch: (url, init) => {
+        console.log('LLM请求URL:', url)
+        console.log('LLM请求配置:', { 
+          method: init?.method, 
+          headers: init?.headers,
+          body: init?.body 
+        })
+        return fetch(url, init)
+      }
     })
     
     this.currentApiKey = config.apiKey
@@ -90,20 +103,36 @@ class LlmService {
       { role: 'user', content: userMessage }
     ]
 
-    const stream = await this.openai.chat.completions.create({
-      messages,
-      model: config.model,
-      stream: true
+    console.log('发送流式LLM请求:', { 
+      baseURL: config.baseURL || LLM_CONFIG.BASE_URL,
+      model: config.model, 
+      stream: true,
+      message: userMessage 
     })
 
-    return (async function* () {
-      for await (const part of stream) {
-        const content = part.choices[0]?.delta?.content
-        if (content) {
-          yield content
+    try {
+      const stream = await this.openai.chat.completions.create({
+        messages,
+        model: config.model,
+        stream: true
+      })
+
+      console.log('流式请求已创建，开始接收数据...')
+
+      return (async function* () {
+        let chunkCount = 0
+        for await (const part of stream) {
+          chunkCount++
+          const content = part.choices[0]?.delta?.content
+          if (content) {
+            yield content
+          }
         }
-      }
-    })()
+      })()
+    } catch (error) {
+      console.error('流式请求失败:', error)
+      throw error
+    }
   }
 }
 

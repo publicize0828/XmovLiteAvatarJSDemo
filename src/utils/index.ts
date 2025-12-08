@@ -50,7 +50,22 @@ export function generateSSML(text: string, options: {
   volume?: number
 } = {}): string {
   const { pitch = 1, speed = 1, volume = 1 } = options
-  return `<speak pitch="${pitch}" speed="${speed}" volume="${volume}">${text}</speak>`
+  
+  // 转义特殊字符
+  const encodeMap: Record<string, string> = {
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&apos;',
+    '"': '&quot;',
+    '&': '&amp;'
+  }
+  
+  // 替换多个换行符为一个，并转义特殊字符
+  const processedText = text
+    .replace(/\n+/g, '\n')
+    .replace(/[<>'"&]/g, (str) => encodeMap[str] || str)
+  
+  return `<speak pitch="${pitch}" speed="${speed}" volume="${volume}">${processedText}</speak>`
 }
 
 /**

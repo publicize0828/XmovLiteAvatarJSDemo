@@ -67,10 +67,10 @@ export async function ensureSDKsLoaded(): Promise<boolean> {
     await Promise.all([
       loadSDK('/cryptojs.js').catch(() => {
         console.warn('本地cryptojs.js加载失败，尝试CDN')
-        return loadSDK('https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js')
+        return loadSDK('https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.js')
       }),
       loadSDK('/speechrecognizer.js'),
-      loadSDK('https://media.xingyun3d.com/xingyun3d/general/litesdk/xmovAvatar.0.1.0-alpha.63.js')
+      loadSDK('https://media.xingyun3d.com/xingyun3d/general/litesdk/xmovAvatar@latest.js')
     ])
     
     // 等待SDK初始化

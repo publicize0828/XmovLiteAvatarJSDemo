@@ -139,6 +139,14 @@
         >
           {{ isSending ? '发送中...' : '发送' }}
         </button>
+        
+        <button 
+          @click="handleInterrupt" 
+          :disabled="!appState.avatar.connected"
+          class="btn btn-interrupt"
+        >
+          打断
+        </button>
       </div>
     </section>
   </div>
@@ -148,6 +156,7 @@
 import { inject, ref, computed } from 'vue'
 import { useAsr } from '../composables/useAsr'
 import { SUPPORTED_LLM_MODELS } from '../constants'
+import { avatarState } from '../stores/app'
 import type { AppState, AppStore } from '../types'
 
 // 注入全局状态和方法
@@ -158,6 +167,9 @@ const appStore = inject<AppStore>('appStore')!
 const isConnecting = ref(false)
 const isSending = ref(false)
 const supportedModels = SUPPORTED_LLM_MODELS
+
+// 计算属性：虚拟人是否正在说话
+const isSpeaking = computed(() => avatarState.value === 'speak')
 
 // ASR Hook - 使用computed确保配置更新时重新创建
 const asrConfig = computed(() => ({
@@ -211,6 +223,9 @@ function handleVoiceInput() {
     secretKey: appState.asr.secretKey
   })
   
+  // 用于防止重复发送的标志
+  let hasAutoSent = false
+  
   appStore.startVoiceInput({
     onFinished: (text: string) => {
       appState.ui.text = text
@@ -221,17 +236,36 @@ function handleVoiceInput() {
       console.error('语音识别错误:', error)
       stopAsrWithConfig()
       appStore.stopVoiceInput()
+      hasAutoSent = false
     }
   })
   
   startAsrWithConfig({
-    onFinished: (text: string) => {
+    onFinished: async (text: string) => {
       appState.ui.text = text
+      stopAsrWithConfig()
       appStore.stopVoiceInput()
+      
+      // 自动发送给大模型（防止重复发送）
+      if (text.trim() && !hasAutoSent) {
+        hasAutoSent = true
+        try {
+          isSending.value = true
+          await appStore.sendMessage()
+        } catch (error) {
+          console.error('自动发送消息失败:', error)
+          alert('自动发送消息失败')
+        } finally {
+          isSending.value = false
+          hasAutoSent = false
+        }
+      }
     },
     onError: (error: any) => {
       console.error('语音识别错误:', error)
+      stopAsrWithConfig()
       appStore.stopVoiceInput()
+      hasAutoSent = false
     }
   })
 }
@@ -249,6 +283,12 @@ async function handleSendMessage() {
     isSending.value = false
   }
 }
+
+function handleInterrupt() {
+  if (!appState.avatar.connected) return
+  
+  appStore.interrupt()
+}
 </script>
 
 <style scoped>
@@ -262,6 +302,12 @@ async function handleSendMessage() {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  z-index: 999;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
 }
 
 .config-section,
@@ -369,6 +415,15 @@ textarea {
 
 .btn-voice:hover:not(:disabled) {
   background: #1e7e34;
+}
+
+.btn-interrupt {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-interrupt:hover:not(:disabled) {
+  background: #c82333;
 }
 
 /* 滚动条美化 */

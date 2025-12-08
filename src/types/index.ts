@@ -44,6 +44,7 @@ export interface AppStore {
   sendMessage(): Promise<string | undefined>
   startVoiceInput(callbacks: AsrCallbacks): void
   stopVoiceInput(): void
+  interrupt(): void
 }
 
 // Store状态类型定义
@@ -53,7 +54,7 @@ export interface AppState {
     appId: string
     appSecret: string
     connected: boolean
-    instance: any
+    instance: any // XmovAvatar SDK 实例（通过 window.XmovAvatar 创建）
   }
   
   // ASR配置
@@ -76,6 +77,12 @@ export interface AppState {
     text: string
     subTitleText: string
   }
+}
+
+export interface ActionQueueItem {
+  ssml: string
+  isStart: boolean
+  isEnd: boolean
 }
 
 // SDK事件类型定义

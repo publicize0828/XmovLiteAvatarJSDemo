@@ -6,6 +6,7 @@ interface AvatarCallbacks {
   onSubtitleOn: (text: string) => void
   onSubtitleOff: () => void
   onStateChange: (state: string) => void
+  onVoiceStateChange?: (status: string) => void
 }
 
 class AvatarService {
@@ -37,7 +38,7 @@ class AvatarService {
    */
   async connect(config: AvatarConfig, callbacks: AvatarCallbacks): Promise<any> {
     const { appId, appSecret } = config
-    const { onSubtitleOn, onSubtitleOff, onStateChange } = callbacks
+    const { onSubtitleOn, onSubtitleOff, onStateChange, onVoiceStateChange } = callbacks
 
     // 构建网关URL
     const url = new URL(SDK_CONFIG.GATEWAY_URL)
@@ -59,7 +60,7 @@ class AvatarService {
       appSecret,
       enableDebugger: false,
       gatewayServer: url.toString(),
-      onWidgetEvent: (event: any) => {
+      onProxyWidgetEvent: (event: any) => {
         console.log('SDK事件:', event)
         if (event.type === 'subtitle_on') {
           onSubtitleOn(event.text)
@@ -74,7 +75,14 @@ class AvatarService {
         if (state === 'pending') {
           reject(plainError)
         }
-      }
+      },
+      onVoiceStateChange: (status: string) => {
+        console.log('onVoiceStateChange=========', status)
+        // 当状态为 'end' 时，表示数字人停止说话
+        if (status.includes('end')) {
+          onVoiceStateChange?.(status)
+        }
+      },
     }
 
     // 创建SDK实例

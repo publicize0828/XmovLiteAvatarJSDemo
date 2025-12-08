@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { inject, computed } from 'vue'
+import { inject, computed, ref, onMounted, onUnmounted } from 'vue'
 import { avatarService } from '../services/avatar'
 import type { AppState } from '../types'
 import siriIcon from '../assets/siri.png'
@@ -31,20 +31,107 @@ const appState = inject<AppState>('appState')!
 
 // 获取容器ID
 const containerId = computed(() => avatarService.getContainerId())
+
+// 响应式处理
+const containerRef = ref<HTMLElement | null>(null)
+const objectFit = ref<'cover' | 'contain'>('cover')
+
+function updateObjectFit() {
+  if (!containerRef.value) return
+  
+  const container = containerRef.value
+  const containerRatio = container.clientWidth / container.clientHeight
+  // 数字人标准比例为9:16 (0.5625)
+  const avatarRatio = 9 / 16
+  
+  // 如果容器比例接近数字人比例，使用cover以填满屏幕
+  // 如果容器比例差异较大，使用contain以完整显示
+  objectFit.value = Math.abs(containerRatio - avatarRatio) < 0.2 ? 'cover' : 'contain'
+}
+
+onMounted(() => {
+  updateObjectFit()
+  window.addEventListener('resize', updateObjectFit)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateObjectFit)
+})
 </script>
 
 <style scoped>
 .avatar-render {
   flex: 1;
   position: relative;
-  border-right: 1px solid #e0e0e0;
-  background: #f5f5f5;
-}
-
-.sdk-container {
+  background: #000000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: all 0.3s ease;
   width: 100%;
   height: 100%;
 }
+
+.sdk-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+.sdk-container :deep(canvas),
+.sdk-container :deep(video) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: v-bind(objectFit);
+}
+
+/* 确保 SDK 内部容器也居中 */
+.sdk-container :deep(div) {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* 响应式处理 - 当需要保持特定比例时 */
+@media (max-width: 768px) {
+  .avatar-render {
+    padding: 0;
+  }
+
+  .sdk-container {
+    width: 100%;
+    height: 100%;
+  }
+
+  .sdk-container :deep(canvas),
+  .sdk-container :deep(video) {
+    object-fit: cover;
+  }
+}
+
+/* @media (max-width: 768px) {
+  .avatar-render {
+    padding: 0 12px;
+  }
+
+  .sdk-container {
+    width: 100%;
+    height: 100%;
+    max-height: calc(100vh - 140px);
+  }
+
+  .sdk-container :deep(canvas),
+  .sdk-container :deep(video) {
+    object-fit: cover;
+  }
+} */
 
 .subtitle {
   position: absolute;
