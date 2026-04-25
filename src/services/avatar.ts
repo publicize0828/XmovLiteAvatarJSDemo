@@ -1,6 +1,6 @@
 import type { AvatarConfig } from '../types'
-import { generateContainerId, getPromiseState } from '../utils'
-import { SDK_CONFIG, APP_CONFIG } from '../constants'
+import { generateContainerId } from '../utils'
+import { SDK_CONFIG } from '../constants'
 
 interface AvatarCallbacks {
   onSubtitleOn: (text: string) => void
@@ -45,21 +45,18 @@ class AvatarService {
     url.searchParams.append('data_source', SDK_CONFIG.DATA_SOURCE)
     url.searchParams.append('custom_id', SDK_CONFIG.CUSTOM_ID)
 
-    // 连接Promise管理
-    let resolve: (value: boolean) => void
-    let reject: (reason?: any) => void
-    const connectPromise = new Promise<boolean>((res, rej) => {
-      resolve = res
-      reject = rej
-    })
 
     // SDK构造选项
     const constructorOptions = {
       containerId: `#${this.containerId}`,
       appId,
       appSecret,
+      headers: {
+        'Authorization': '888jn',
+      },
       enableDebugger: false,
       gatewayServer: url.toString(),
+      config: SDK_CONFIG.AVATAR_CONFIG,
       onProxyWidgetEvent: (event: any) => {
         console.log('SDK事件:', event)
         if (event.type === 'subtitle_on') {
@@ -69,15 +66,10 @@ class AvatarService {
         }
       },
       onStateChange,
-      onMessage: async (error: any) => {
-        const state = await getPromiseState(connectPromise)
-        const plainError = new Error(error.message)
-        if (state === 'pending') {
-          reject(plainError)
-        }
+      onMessage: (error: any) => {
+        console.error('SDK错误:', error)
       },
       onVoiceStateChange: (status: string) => {
-        console.log('onVoiceStateChange=========', status)
         // 当状态为 'end' 时，表示数字人停止说话
         if (status.includes('end')) {
           onVoiceStateChange?.(status)
@@ -87,18 +79,12 @@ class AvatarService {
 
     // 创建SDK实例
     const avatar = new window.XmovAvatar(constructorOptions)
-    
-    // 等待初始化
-    await new Promise(resolve => {
-      setTimeout(resolve, APP_CONFIG.AVATAR_INIT_TIMEOUT)
-    })
-
     // 初始化SDK
     await avatar.init({
       onDownloadProgress: (progress: number) => {
         console.log(`初始化进度: ${progress}%`)
         if (progress >= 100) {
-          resolve(true)
+          console.log('SDK初始化完成')
         }
       },
       onClose: () => {
@@ -106,17 +92,6 @@ class AvatarService {
         console.log('SDK连接关闭')
       }
     })
-
-    // 等待连接完成
-    const [result] = await Promise.allSettled([
-      connectPromise,
-      new Promise(resolve => setTimeout(resolve, 1000))
-    ])
-
-    if (result.status === 'rejected') {
-      console.error('SDK连接失败:', result.reason)
-      throw result.reason
-    }
 
     return avatar
   }

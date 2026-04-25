@@ -1,0 +1,45 @@
+{
+  "avatar": {
+    "appId": "",
+    "appSecret": ""
+  },
+  "asr": {
+    "tx": {
+      "appId": "",
+      "secretId": "",
+      "secretKey": ""
+    },
+    "xmov": {
+      "appId": "",
+      "secretKey": ""
+    },
+    "xunfei": {
+      "appId": "",
+      "secretKey": ""
+    }
+  },
+  "llm": {
+    "doubao-1-5-pro-32k-250115": {
+      "apiKey": ""
+    },
+    "qwen-plus": {
+      "apiKey": ""
+    },
+    "glm-4.7": {
+      "apiKey": ""
+    },
+    "kimi-k2-thinking": {
+      "apiKey": ""
+    },
+    "DeepSeek-V3.2": {
+      "apiKey": ""
+    },
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": {
+      "apiKey": ""
+    },
+    "coze": {
+      "apiKey": "",
+      "botId": ""
+    }
+  }
+}

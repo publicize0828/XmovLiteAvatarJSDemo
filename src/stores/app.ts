@@ -1,12 +1,11 @@
 import { reactive, ref, watch } from 'vue'
 import type { AppState } from '../types'
-import { LLM_CONFIG } from '../constants'
+import { LLM_CONFIG, SDK_CONFIG } from '../constants'
 import { validateConfig } from '../utils'
 import { avatarService } from '../services/avatar'
 import { llmService } from '../services/llm'
 import { ActionManager } from '../services/action-manager'
 
-// 应用状态
 export const appState = reactive<AppState>({
   avatar: {
     appId: '',
@@ -23,26 +22,33 @@ export const appState = reactive<AppState>({
   },
   llm: {
     model: LLM_CONFIG.DEFAULT_MODEL,
-    apiKey: ''
+    apiKey: '',
+    botId: ''
   },
   ui: {
     text: '',
-    subTitleText: ''
+    subTitleText: '',
+    mode: 'interactive' as 'interactive' | 'walk' | 'switch' | 'custom-event'
   }
 })
 
-// 中文标点符号正则
 const cnSplitSign = /[。？！；… ，：]/
-// 英文标点符号正则
 const enSplitSign = /[.?!;:,]/
 
-// 虚拟人状态
 export const avatarState = ref('')
-
 const avatarInstance = ref<any>(null)
-
-// 用于等待 onVoiceStateChange 'end' 状态的 Promise 解析器
 let voiceEndResolver: (() => void) | null = null
+
+// 回调注册表：支持不同页面注册自己的回调
+const callbackRegistry = {
+  onSubtitleOn: [] as Array<(text: string) => void>,
+  onSubtitleOff: [] as Array<() => void>,
+  onStateChange: [] as Array<(state: string) => void>,
+  onVoiceStateChange: [] as Array<(status: string) => void>,
+  onWalkStateChange: [] as Array<(state: string) => void>,
+  onWidgetEvent: [] as Array<(event: any) => void>,
+  onProxyWidgetEvent: [] as Array<(event: any) => void>,
+}
 
 const actionManager = new ActionManager({
   instanceRef: avatarInstance,
@@ -54,61 +60,228 @@ const actionManager = new ActionManager({
   }
 })
 
-// Store类 - 业务逻辑处理
 export class AppStore {
-  /**
-   * 连接虚拟人
-   * @returns {Promise<void>} - 返回连接结果的Promise
-   * @throws {Error} - 当appId或appSecret为空或连接失败时抛出错误
-   */
-  async connectAvatar(): Promise<void> {
-    const { appId, appSecret } = appState.avatar
-    
-    if (!validateConfig({ appId, appSecret }, ['appId', 'appSecret'])) {
-      throw new Error('appId 或 appSecret 为空')
-    }
-
-    try {
-      const avatar = await avatarService.connect({
-        appId,
-        appSecret
-      }, {
-        onSubtitleOn: (text: string) => {
-          appState.ui.subTitleText = text
-        },
-        onSubtitleOff: () => {
-          appState.ui.subTitleText = ''
-        },
-        onStateChange: (state: string) => {
-          avatarState.value = state
-        },
-        onVoiceStateChange: (status: string) => {
-          // 当 onVoiceStateChange 抛出 'end' 时，表示数字人停止说话
-          if (status === 'end') {
-            console.log('onVoiceStateChange: 数字人停止说话 (end)')
-            avatarState.value = 'interactive_idle'
-            // 如果有等待中的 Promise，解析它
-            if (voiceEndResolver) {
-              voiceEndResolver()
-              voiceEndResolver = null
-            }
-          }
-        }
-      })
-
-      appState.avatar.instance = avatar
-      avatarInstance.value = avatar
-      appState.avatar.connected = true
-    } catch (error) {
-      appState.avatar.connected = false
-      throw error
+  // 注册回调
+  registerCallback(type: keyof typeof callbackRegistry, callback: any) {
+    callbackRegistry[type].push(callback)
+    return () => {
+      const index = callbackRegistry[type].indexOf(callback)
+      if (index > -1) callbackRegistry[type].splice(index, 1)
     }
   }
 
-  /**
-   * 断开虚拟人连接
-   * @returns {void}
-   */
+  // 创建数字人实例（用于多数字人场景，不管理状态）
+  async createAvatarInstance(options: {
+    containerId: string
+    appId: string
+    appSecret: string
+    gatewayServer?: string
+    config: any
+    useInvisibleMode?: boolean
+    onStatusChange?: (status: any) => void
+    onRenderChange?: (state: any) => void
+    onMessage?: (error: any) => void
+    onVoiceStateChange?: (status: string, duration?: number) => void
+    onWalkStateChange?: (state: string) => void
+    onWidgetEvent?: (data: any) => void
+    proxyWidget?: { [key: string]: (data: any) => void }
+    onDownloadProgress?: (progress: number) => void
+  }): Promise<any> {
+    const {
+      containerId,
+      appId,
+      appSecret,
+      gatewayServer,
+      config,
+      useInvisibleMode = false,
+      onStatusChange,
+      onRenderChange,
+      onMessage,
+      onVoiceStateChange,
+      onWalkStateChange,
+      onWidgetEvent,
+      proxyWidget,
+      onDownloadProgress
+    } = options
+
+    if (!appId || !appSecret) {
+      throw new Error('请先配置 AppId 和 AppSecret')
+    }
+
+    const url = new URL(gatewayServer || SDK_CONFIG.GATEWAY_URL)
+    if (!gatewayServer) {
+      url.searchParams.append('data_source', SDK_CONFIG.DATA_SOURCE)
+      url.searchParams.append('custom_id', SDK_CONFIG.CUSTOM_ID)
+    }
+
+    // 禁用 ASR（多数字人场景不需要ASR）
+    const finalConfig = { ...config, enable_asr: false, asr_enabled: false }
+
+    const constructorOptions: any = {
+      containerId: containerId.startsWith('#') ? containerId : `#${containerId}`,
+      appId,
+      appSecret,
+      headers: { 'Authorization': '888jn' },
+      enableDebugger: false,
+      gatewayServer: url.toString(),
+      config: finalConfig,
+      onMessage: (error: any) => {
+        if (error?.code && error.code !== 0) {
+          console.error('SDK错误:', error)
+        }
+        onMessage?.(error)
+      }
+    }
+
+    // 添加回调
+    if (onStatusChange) {
+      constructorOptions.onStatusChange = onStatusChange
+    }
+    if (onRenderChange) {
+      constructorOptions.onRenderChange = onRenderChange
+    }
+    if (onVoiceStateChange) {
+      constructorOptions.onVoiceStateChange = onVoiceStateChange
+    }
+    if (onWalkStateChange) {
+      constructorOptions.onWalkStateChange = onWalkStateChange
+    }
+    if (onWidgetEvent) {
+      constructorOptions.onWidgetEvent = onWidgetEvent
+    }
+    if (proxyWidget) {
+      constructorOptions.proxyWidget = proxyWidget
+    }
+
+    const avatar = new window.XmovAvatar(constructorOptions)
+    
+    await avatar.init({
+      onDownloadProgress: (progress: number) => {
+        onDownloadProgress?.(progress)
+      },
+      initModel: useInvisibleMode ? 'invisible' : 'normal'
+    })
+
+    // 启动数字人
+    await avatar.start()
+
+    return avatar
+  }
+
+  // 切换容器（用于不同页面）
+  async switchContainer(containerId: string, config?: any): Promise<void> {
+    if (!appState.avatar.instance) {
+      await this.connectAvatar(containerId, config)
+      return
+    }
+
+    // 如果已连接，需要重新初始化到新容器
+    const instance = appState.avatar.instance
+    try {
+      await instance.stop()
+      // 注意：SDK可能不支持动态切换容器，可能需要重新创建实例
+      // 这里先尝试，如果不行则需要断开重连
+      await this.disconnectAvatar()
+      await this.connectAvatar(containerId, config)
+    } catch (e) {
+      console.error('切换容器失败，重新连接:', e)
+      await this.disconnectAvatar()
+      await this.connectAvatar(containerId, config)
+    }
+  }
+
+  async connectAvatar(containerId?: string, customConfig?: any): Promise<void> {
+    const { appId, appSecret } = appState.avatar
+    if (!appId || !appSecret) {
+      throw new Error('请先配置 AppId 和 AppSecret')
+    }
+
+    // 如果已连接，先断开
+    if (appState.avatar.instance) {
+      await this.disconnectAvatar()
+    }
+
+    const container = containerId || avatarService.getContainerId()
+    const url = new URL(SDK_CONFIG.GATEWAY_URL)
+    url.searchParams.append('data_source', SDK_CONFIG.DATA_SOURCE)
+    url.searchParams.append('custom_id', SDK_CONFIG.CUSTOM_ID)
+
+    // 合并配置
+    const finalConfig = customConfig ? { ...SDK_CONFIG.AVATAR_CONFIG, ...customConfig } : SDK_CONFIG.AVATAR_CONFIG
+
+    // 在 walk 和 custom-event 模式下禁用 ASR
+    if (appState.ui.mode === 'walk' || appState.ui.mode === 'custom-event') {
+      finalConfig.enable_asr = false
+      finalConfig.asr_enabled = false
+    }
+
+    const constructorOptions: any = {
+      containerId: `#${container}`,
+      appId,
+      appSecret,
+      headers: { 'Authorization': '888jn' },
+      enableDebugger: false,
+      gatewayServer: url.toString(),
+      config: finalConfig,
+      onProxyWidgetEvent: (event: any) => {
+        if (event.type === 'subtitle_on') {
+          appState.ui.subTitleText = event.text
+          callbackRegistry.onSubtitleOn.forEach(cb => cb(event.text))
+        } else if (event.type === 'subtitle_off') {
+          appState.ui.subTitleText = ''
+          callbackRegistry.onSubtitleOff.forEach(cb => cb())
+        }
+        callbackRegistry.onProxyWidgetEvent.forEach(cb => cb(event))
+      },
+      onStateChange: (state: string) => {
+        avatarState.value = state
+        callbackRegistry.onStateChange.forEach(cb => cb(state))
+      },
+      onVoiceStateChange: (status: string) => {
+        if (status.includes('end')) {
+          avatarState.value = 'interactive_idle'
+          voiceEndResolver?.()
+          voiceEndResolver = null
+        }
+        callbackRegistry.onVoiceStateChange.forEach(cb => cb(status))
+      },
+      onMessage: (error: any) => {
+        if (error?.code && error.code !== 0) {
+          console.error('SDK错误:', error)
+        }
+      }
+    }
+
+    // 根据模式添加特定回调
+    if (appState.ui.mode === 'walk' && callbackRegistry.onWalkStateChange.length > 0) {
+      constructorOptions.onWalkStateChange = (state: string) => {
+        callbackRegistry.onWalkStateChange.forEach(cb => cb(state))
+      }
+    }
+
+    if (appState.ui.mode === 'custom-event' && callbackRegistry.onWidgetEvent.length > 0) {
+      constructorOptions.onWidgetEvent = (data: any) => {
+        callbackRegistry.onWidgetEvent.forEach(cb => cb(data))
+      }
+    }
+
+    const avatar = new window.XmovAvatar(constructorOptions)
+    
+    await avatar.init({
+      onDownloadProgress: (progress: number) => {
+        console.log(`初始化进度: ${progress}%`)
+      },
+      onClose: () => {
+        avatarState.value = ''
+        callbackRegistry.onStateChange.forEach(cb => cb(''))
+      }
+    })
+
+    appState.avatar.instance = avatar
+    avatarInstance.value = avatar
+    appState.avatar.connected = true
+  }
+
   disconnectAvatar(): void {
     if (appState.avatar.instance) {
       avatarService.disconnect(appState.avatar.instance)
@@ -120,265 +293,142 @@ export class AppStore {
     }
   }
 
-  /**
-   * 等待虚拟人停止说话
-   * 通过 onVoiceStateChange 抛出的 'end' 判断数字人停止说话
-   * @param timeout - 超时时间（毫秒），默认 5000ms
-   * @returns {Promise<void>} - 返回等待完成的Promise
-   */
   private async waitForAvatarIdle(timeout: number = 5000): Promise<void> {
-    // 如果已经是空闲状态，直接返回
     if (avatarState.value === 'interactive_idle' || avatarState.value === '') {
       return
     }
 
-    return new Promise((resolve, reject) => {
-      let resolved = false
+    return new Promise((resolve) => {
+      voiceEndResolver = () => resolve()
       
-      // 设置 Promise 解析器，等待 onVoiceStateChange 的 'end' 状态
-      voiceEndResolver = () => {
-        if (!resolved) {
-          resolved = true
-          clearTimeout(timeoutId)
-          resolve()
-        }
-      }
-
-      // 同时使用 watch 监听状态变化作为备用方案
       const stopWatcher = watch(avatarState, (newState) => {
-        if ((newState === 'interactive_idle' || newState === '') && !resolved) {
-          resolved = true
+        if (newState === 'interactive_idle' || newState === '') {
           stopWatcher()
           voiceEndResolver = null
-          clearTimeout(timeoutId)
           resolve()
         }
-      }, { immediate: false })
+      })
 
-      // 设置超时
-      const timeoutId = setTimeout(() => {
-        if (!resolved) {
-          resolved = true
-          stopWatcher()
-          voiceEndResolver = null
-          reject(new Error('等待虚拟人停止说话超时'))
-        }
+      setTimeout(() => {
+        stopWatcher()
+        voiceEndResolver = null
+        resolve()
       }, timeout)
-
-      // 立即检查一次状态（可能在 watch 设置之前状态已经变化）
-      if (avatarState.value === 'interactive_idle' || avatarState.value === '') {
-        if (!resolved) {
-          resolved = true
-          stopWatcher()
-          voiceEndResolver = null
-          clearTimeout(timeoutId)
-          resolve()
-        }
-      }
     })
   }
 
-  /**
-   * 发送消息到LLM并让虚拟人播报
-   * @returns {Promise<string | undefined>} - 返回大语言模型的回复内容，失败时返回undefined
-   * @throws {Error} - 当发送消息失败时抛出错误
-   */
   async sendMessage(): Promise<string | undefined> {
     const { llm, ui, avatar } = appState
     if (!validateConfig(llm, ['apiKey']) || !ui.text || !avatar.instance) {
       return
     }
 
-    try {
-      // 如果数字人正在说话，先打断并等待停止
-      console.log('数字人正在说话，先打断...')
-      await this.interrupt()
-      if (avatarState.value === 'speak') {
-        
-        // 等待数字人停止说话（通过 onStateChange 抛出的 end 判断）
-        try {
-          await this.waitForAvatarIdle()
-          console.log('数字人已停止说话，继续发送消息')
-        } catch (error) {
-          console.warn('等待数字人停止说话超时，继续发送:', error)
-          // 即使超时也继续发送，避免阻塞
-        }
-      }
-
-      actionManager.reset()
-      // 发送到LLM获取回复
-      const stream = await llmService.sendMessageWithStream({
-        provider: 'openai',
-        model: llm.model,
-        apiKey: llm.apiKey
-      }, ui.text)
-
-      if (!stream) return
-
-      // 移除 think 调用以提升响应速度
-      // await this.waitForAvatarReady()
-
-      // 缓存一定数量文本再进行 speak 调用，采用如下策略：
-      // 1. 持续缓存字符直到遇到任意标点符号，检查【缓存的可读字符是否 >= minimum】
-      //   1.1 如果是，将缓存组装为 ssml 并调用 speak
-      //   1.2 如果否，继续缓存
-      // 2. 将【汉字、英文字母、阿拉伯数字】视为【可读字符】进行匹配
-      const minimum = 20
-      const context = {
-        /** 缓存文本 */
-        cache: '',
-        /** 缓存的可读字符数 */
-        chars: 0,
-        /** 是否已经发送过首句 */
-        firstSpeakSend: false,
-        /** 缓存的空格数 */
-        spaceCount: 0
-      }
-
-      // 创建一个 Promise，在第一句发送后立即 resolve
-      let firstSentenceResolved = false
-      const firstSentencePromise = new Promise<void>((resolve) => {
-        // 在后台继续处理流式数据
-        ;(async () => {
-          try {
-            // 流式播报响应内容
-            for await (const content of stream) {
-              if (typeof content !== 'string') continue // 防御编程
-              
-              context.cache += content // 将该段文本加入缓存
-
-              // 英文以空格开头加一个计数器做分割推送
-              if (content.startsWith(' ')) {
-                context.spaceCount += 1
-              }
-              
-              const chars = content.match(/[\u4e00-\u9fa5a-zA-Z0-9]/g)?.length ?? 0 // 统计段内可读字符数
-              let shouldSend = false
-              
-              if (!context.firstSpeakSend) {
-                // 首句：需要达到最小字符数且遇到标点符号
-                shouldSend = context.spaceCount
-                  ? context.spaceCount > minimum - 1 && enSplitSign.test(content)
-                  : context.chars > minimum && cnSplitSign.test(content)
-              } else {
-                // 后续句子：遇到标点符号即可发送
-                shouldSend = context.spaceCount ? enSplitSign.test(content) : cnSplitSign.test(content)
-              }
-              
-              if (!shouldSend) {
-                context.chars += chars
-                continue
-              }
-              
-              // 发送缓存的文本
-              actionManager.speak(context.cache, {
-                isStart: !context.firstSpeakSend,
-                isEnd: false
-              })
-              
-              // 如果是第一句，立即 resolve Promise，让 sendMessage 返回
-              if (!context.firstSpeakSend && !firstSentenceResolved) {
-                firstSentenceResolved = true
-                context.firstSpeakSend = true
-                resolve() // 第一句发送后立即返回成功信号
-              } else if (context.firstSpeakSend) {
-                context.firstSpeakSend = true
-              }
-              
-              context.cache = ''
-              context.chars = 0
-              context.spaceCount = 0
-            }
-
-            // 处理剩余的缓存文本
-            if (context.cache.length > 0) {
-              actionManager.speak(context.cache, {
-                isStart: !context.firstSpeakSend,
-                isEnd: true
-              })
-            } else if (context.firstSpeakSend) {
-              // 如果已经发送过内容但没有剩余文本，发送结束标记
-              actionManager.speak('', {
-                isStart: false,
-                isEnd: true
-              })
-            }
-          } catch (error) {
-            console.error('流式处理错误:', error)
-            // 如果第一句还没发送就出错了，也要 resolve
-            if (!firstSentenceResolved) {
-              firstSentenceResolved = true
-              resolve()
-            }
-          }
-        })()
-      })
-
-      // 等待第一句发送完成，然后立即返回
-      await firstSentencePromise
-      return 'success'
-    } catch (error) {
-      console.error('发送消息失败:', error)
-      throw error
+    await this.interrupt()
+    if (avatarState.value === 'speak') {
+      await this.waitForAvatarIdle()
     }
+
+    actionManager.reset()
+    const stream = await llmService.sendMessageWithStream({
+      provider: llm.model.startsWith('coze') ? 'coze' : 'openai',
+      model: llm.model,
+      apiKey: llm.apiKey,
+      botId: llm.botId
+    }, ui.text)
+
+    if (!stream) return
+
+    const minimum = 20
+    const context = {
+      cache: '',
+      chars: 0,
+      firstSpeakSend: false,
+      spaceCount: 0
+    }
+
+    let firstSentenceResolved = false
+    const firstSentencePromise = new Promise<void>((resolve) => {
+      ;(async () => {
+        for await (const content of stream) {
+          context.cache += content
+
+          if (content.startsWith(' ')) {
+            context.spaceCount += 1
+          }
+          
+          const chars = content.match(/[\u4e00-\u9fa5a-zA-Z0-9]/g)?.length ?? 0
+          const isFirst = !context.firstSpeakSend
+          const shouldSend = isFirst
+            ? (context.spaceCount ? context.spaceCount > minimum - 1 && enSplitSign.test(content) : context.chars > minimum && cnSplitSign.test(content))
+            : (context.spaceCount ? enSplitSign.test(content) : cnSplitSign.test(content))
+          
+          if (!shouldSend) {
+            context.chars += chars
+            continue
+          }
+          
+          actionManager.speak(context.cache, {
+            isStart: isFirst,
+            isEnd: false
+          })
+          
+          if (isFirst && !firstSentenceResolved) {
+            firstSentenceResolved = true
+            context.firstSpeakSend = true
+            resolve()
+          } else {
+            context.firstSpeakSend = true
+          }
+          
+          context.cache = ''
+          context.chars = 0
+          context.spaceCount = 0
+        }
+
+        if (context.cache.length > 0) {
+          actionManager.speak(context.cache, {
+            isStart: !context.firstSpeakSend,
+            isEnd: true
+          })
+        } else if (context.firstSpeakSend) {
+          actionManager.speak('', {
+            isStart: false,
+            isEnd: true
+          })
+        }
+
+        if (!firstSentenceResolved) {
+          resolve()
+        }
+      })()
+    })
+
+    await Promise.race([
+      firstSentencePromise,
+      new Promise<void>((resolve) => setTimeout(resolve, 5000))
+    ])
+
+    return 'success'
   }
 
-  /**
-   * 开始语音输入
-   * @param _callbacks - 回调函数集合（ASR逻辑由组件处理，此参数保留用于接口兼容性）
-   * @param _callbacks.onFinished - 语音识别完成回调
-   * @param _callbacks.onError - 语音识别错误回调
-   * @returns {void}
-   */
   startVoiceInput(_callbacks: {
     onFinished: (text: string) => void
     onError: (error: any) => void
   }): void {
     appState.asr.isListening = true
-    // ASR逻辑由组件处理
   }
 
-  /**
-   * 停止语音输入
-   * @returns {void}
-   */
   stopVoiceInput(): void {
     appState.asr.isListening = false
   }
 
-  /**
-   * 打断虚拟人说话
-   * @returns {void}
-   */
   interrupt(): void {
-    if (!appState.avatar.instance) {
-      return
-    }
+    if (!appState.avatar.instance) return
 
-    try {
-      // 重置动作管理器队列
-      actionManager.reset()
-      
-      // 调用虚拟人实例的打断方法
-      // SDK 的 interactive_idle() 方法用于打断当前说话
-      // SDK 会通过 onStateChange 回调通知状态变化为 'interactive_idle'
-      if (typeof appState.avatar.instance.interactiveidle === 'function') {
-        appState.avatar.instance.interactiveidle()
-        console.log('已调用 interactive_idle() 打断方法，等待 SDK 通过 onStateChange 回调更新状态')
-      } else {
-        console.warn('interactive_idle() 方法不存在，尝试其他打断方法')
-        // 备用方案：尝试其他可能的打断方法
-        if (typeof appState.avatar.instance.interrupt === 'function') {
-          appState.avatar.instance.interrupt()
-        }
-      }
-    } catch (error) {
-      console.error('打断失败:', error)
-      // 如果打断失败，直接设置状态为交互空闲，确保逻辑继续执行
-      avatarState.value = 'interactive_idle'
-    }
+    actionManager.reset()
+    appState.avatar.instance.interactiveidle?.()
+    avatarState.value = 'interactive_idle'
   }
 }
 
-// 导出单例
 export const appStore = new AppStore()

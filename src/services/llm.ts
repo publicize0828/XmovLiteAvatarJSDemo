@@ -1,139 +1,143 @@
-import OpenAI from 'openai'
-import type { LlmConfig, ChatMessage } from '../types'
-import { LLM_CONFIG } from '../constants'
+import type { LlmConfig } from '../types'
+import { openaiLlmService } from './openai-llm'
+import { cozeLlmService } from './coze-llm'
+import { BaseLlmService } from './base-llm'
 
-class LlmService {
-  private openai: OpenAI | null = null
-  private currentApiKey: string = ''
+/**
+ * LLM服务映射表
+ * 根据provider名称映射到对应的服务实例
+ */
+const llmServices: Record<string, BaseLlmService> = {
+  openai: openaiLlmService,
+  coze: cozeLlmService,
+}
 
+/**
+ * LLM服务工厂类
+ * 提供统一的LLM服务调用入口，根据配置选择不同的LLM服务实现
+ */
+export class LlmService {
   /**
-   * 初始化LLM客户端
+   * 根据配置获取对应的LLM服务实例
    * @param config - LLM配置对象
-   * @param config.apiKey - API密钥
-   * @param config.model - 模型名称
-   * @param config.baseURL - 可选的基础URL
-   * @returns void
+   * @returns BaseLlmService - 返回对应的LLM服务实例
+   * @throws {Error} - 当provider不支持时抛出错误
    */
-  private initClient(config: LlmConfig): void {
-    if (this.currentApiKey === config.apiKey && this.openai) {
-      return
+  private getService(config: LlmConfig): BaseLlmService {
+    const service = llmServices[config.provider]
+    if (!service) {
+      console.error(`不支持的LLM服务提供商: ${config.provider}`)
+      throw new Error(`不支持的LLM服务提供商: ${config.provider}`)
     }
-
-    const baseURL = config.baseURL || LLM_CONFIG.BASE_URL
-    console.log('初始化LLM客户端:', { baseURL, model: config.model })
-
-    this.openai = new OpenAI({
-      apiKey: config.apiKey,
-      dangerouslyAllowBrowser: true,
-      baseURL: baseURL,
-      // 确保使用 fetch API 支持流式
-      fetch: (url, init) => {
-        console.log('LLM请求URL:', url)
-        console.log('LLM请求配置:', { 
-          method: init?.method, 
-          headers: init?.headers,
-          body: init?.body 
-        })
-        return fetch(url, init)
-      }
-    })
-    
-    this.currentApiKey = config.apiKey
+    console.log(`选择LLM服务提供商: ${config.provider}`)
+    return service
   }
 
   /**
    * 发送消息到大语言模型
    * @param config - LLM配置对象
-   * @param config.apiKey - API密钥
-   * @param config.model - 模型名称
-   * @param config.baseURL - 可选的基础URL
    * @param userMessage - 用户输入的消息内容
    * @returns Promise<string | null> - 返回模型的回复内容，失败时返回null
    * @throws {Error} - 当LLM客户端未初始化或请求失败时抛出错误
    */
   async sendMessage(config: LlmConfig, userMessage: string): Promise<string | null> {
-    this.initClient(config)
-    
-    if (!this.openai) {
-      throw new Error('LLM客户端未初始化')
-    }
-
-    const messages: ChatMessage[] = [
-      { role: 'system', content: LLM_CONFIG.SYSTEM_PROMPT },
-      { role: 'user', content: userMessage }
-    ]
-
     try {
-      console.log('发送LLM请求:', { model: config.model, message: userMessage })
+      console.log('调用LLM服务发送消息', {
+        provider: config.provider,
+        model: config.model,
+        messageLength: userMessage.length
+      })
       
-      const completion = await this.openai.chat.completions.create({
-        messages,
+      const service = this.getService(config)
+      const result = await service.sendMessage(config, userMessage)
+      
+      return result
+    } catch (error) {
+      console.error('LLM服务发送消息失败', error as Error, {
+        provider: config.provider,
         model: config.model
       })
-
-      const response = completion.choices[0]?.message?.content
-      console.log('LLM响应:', response)
-      
-      return response || null
-    } catch (error) {
-      console.error('LLM请求失败:', error)
       throw error
     }
   }
 
   /**
-   * 流式发送消息（预留接口）
+   * 流式发送消息到大语言模型
    * @param config - LLM配置对象
-   * @param config.apiKey - API密钥
-   * @param config.model - 模型名称
-   * @param config.baseURL - 可选的基础URL
    * @param userMessage - 用户输入的消息内容
    * @returns Promise<AsyncIterable<string>> - 返回异步可迭代的字符串流
    * @throws {Error} - 当LLM客户端未初始化或请求失败时抛出错误
    */
   async sendMessageWithStream(config: LlmConfig, userMessage: string): Promise<AsyncIterable<string>> {
-    this.initClient(config)
-    
-    if (!this.openai) {
-      throw new Error('LLM客户端未初始化')
-    }
-
-    const messages: ChatMessage[] = [
-      { role: 'system', content: LLM_CONFIG.SYSTEM_PROMPT },
-      { role: 'user', content: userMessage }
-    ]
-
-    console.log('发送流式LLM请求:', { 
-      baseURL: config.baseURL || LLM_CONFIG.BASE_URL,
-      model: config.model, 
-      stream: true,
-      message: userMessage 
-    })
-
     try {
-      const stream = await this.openai.chat.completions.create({
-        messages,
+      console.log('调用LLM服务发送流式消息', {
+        provider: config.provider,
         model: config.model,
-        stream: true
+        messageLength: userMessage.length
       })
-
-      console.log('流式请求已创建，开始接收数据...')
-
-      return (async function* () {
-        let chunkCount = 0
-        for await (const part of stream) {
-          chunkCount++
-          const content = part.choices[0]?.delta?.content
-          if (content) {
-            yield content
-          }
-        }
-      })()
+      
+      const service = this.getService(config)
+      const stream = await service.sendMessageWithStream(config, userMessage)
+      
+      return stream
     } catch (error) {
-      console.error('流式请求失败:', error)
+      console.error('LLM服务发送流式消息失败', error as Error, {
+        provider: config.provider,
+        model: config.model
+      })
       throw error
+    }
+  }
+
+  /**
+   * 测试LLM连接是否正常
+   * @param config - LLM配置对象
+   * @returns Promise<boolean> - 返回连接是否成功
+   * @throws {Error} - 当LLM客户端未初始化或请求失败时抛出错误
+   */
+  async testConnection(config: LlmConfig): Promise<boolean> {
+    try {
+      console.log('测试LLM服务连接', {
+        provider: config.provider,
+        model: config.model
+      })
+      
+      const service = this.getService(config)
+      const result = await service.testConnection(config)
+      
+      return result
+    } catch (error) {
+      console.error('LLM服务连接测试失败', error as Error, {
+        provider: config.provider,
+        model: config.model
+      })
+      throw error
+    }
+  }
+
+  /**
+   * 断开LLM连接
+   * @param config - LLM配置对象（可选，用于指定要断开的服务）
+   * @returns void
+   */
+  disconnect(config?: LlmConfig): void {
+    if (config) {
+      // 断开指定服务的连接
+      console.log('断开指定LLM服务连接', {
+        provider: config.provider
+      })
+      const service = this.getService(config)
+      service.disconnect()
+    } else {
+      // 断开所有服务的连接
+      console.log('断开所有LLM服务连接')
+      Object.values(llmServices).forEach(service => service.disconnect())
     }
   }
 }
 
+/**
+ * LLM服务单例实例
+ * 提供统一的LLM服务调用入口
+ */
 export const llmService = new LlmService()
