@@ -40,70 +40,25 @@ export const SDK_CONFIG = {
   DATA_SOURCE: '2',
   CUSTOM_ID: 'demo',
   // 从环境变量读取，如果未配置则使用空字符串
-  APP_ID:  '123',
-  APP_SECRET:'123',
+  APP_ID: '123',
+  APP_SECRET: '123',
   AVATAR_CONFIG: {
-    "look_name": "FF008_6530_new",
-    "tts_vcn_id": "XMOV_HN_TTS__4",
-    "is_large_model": false,
-    "sta_face_id": "F_CN02_yuxuan",
-    "mp_service_id": "F_CN02_show52_walk_test",
-    "figure_name": "SCF25_001",
-    "lite_drive_style": "lively",
-    "background_img": "https://media.youyan.xyz/youyan/images/shot_layer_library/2D_background/ppt_train_02__2D_background.png",
-    "frame_rate": 24,
-    "optional_emotion": "",
-    "init_events": [
-      {
-        "data": {
-          "axis_id": 1,
-          "height": 1,
-          "image": "https://media.xingyun3d.com/xingyun3d/general/litehuman/background_2D/jushen_v1_black_and_gold_style_office_02.png",
-          "width": 1,
-          "x_location": 0,
-          "y_location": 0
-        },
-        "type": "widget_pic"
-      }
-    ],
-    "auto_ka": true,
-    "render_preset": "1080x1920_fullbody",
-    "layout": {
-      "container": {
-        "size": [
-          1440,
-          810
-        ]
-      },
-      "avatar": {
-        "v_align": "center",
-        "h_align": "middle",
-        "scale": 0.3,
-        "offset_x": 0,
-        "offset_y": 0
-      }
+    raw_audio: false,
+    walk_version: 3,
+    framedata_proto_version: 2,
+    layout: {
+      avatar: { h_align: 'right', offset_x: 0, offset_y: 0, scale: 0.3, v_align: 'bottom' },
+      container: { size: [1125, 911] }
     },
-    "walk_config": {
-      "min_x_offset": -500,
-      "max_x_offset": 500,
-      "walk_points": {
-        "A": -500,
-        "B": -400,
-        "C": -300,
-        "D": -200,
-        "E": -100,
-        "F": 0,
-        "G": 100,
-        "H": 200,
-        "I": 300,
-        "J": 400,
-        "K": 500
-      },
-      "init_point": 0
-    }
+    walk_config: {
+      init_point: 600,
+      labels: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"],
+      max_x_offset: 1005,
+      min_x_offset: 120,
+      walk_points: { A: 120, B: 240, C: 360, D: 480, E: 600, F: 720, G: 840, H: 960, I: 1080, J: 1200, K: 1320 }
+    },
   }
 } as const
-
 // 支持的LLM模型列表
 export const SUPPORTED_LLM_MODELS = [
   {
