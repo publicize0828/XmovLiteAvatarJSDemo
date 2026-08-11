@@ -40,7 +40,7 @@
         <label>ASR 服务商</label>
         <select v-model="appState.asr.provider" @change="handleProviderChange">
           <option value="tx">腾讯云</option>
-          <option value="xmov">xmovASR</option>
+          <!-- <option value="xmov">xmovASR</option> -->
           <!-- <option value="doubao">豆包ASR</option> -->
           <option value="xunfei">讯飞ASR</option>
         </select>
