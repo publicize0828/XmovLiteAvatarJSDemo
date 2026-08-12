@@ -40,7 +40,7 @@
         <label>ASR 服务商</label>
         <select v-model="appState.asr.provider" @change="handleProviderChange">
           <option value="tx">腾讯云</option>
-          <!-- <option value="xmov">xmovASR</option> -->
+          <option value="xmov">xmovASR</option>
           <!-- <option value="doubao">豆包ASR</option> -->
           <option value="xunfei">讯飞ASR</option>
         </select>
@@ -213,6 +213,8 @@ const isTestingAsr = ref(false);
 const supportedModels = SUPPORTED_LLM_MODELS;
 // 配置缓存 - 使用 shallowRef 优化性能
 const configCache = shallowRef<any>(null);
+// 当前正在运行的 ASR 实例，用于停止
+let stopCurrentAsr: (() => void) | null = null;
 
 // 计算属性：虚拟人是否正在说话
 const isSpeaking = computed(() => avatarState.value === "speak");
@@ -221,17 +223,6 @@ const isSpeaking = computed(() => avatarState.value === "speak");
 const needsSecretId = computed(() => {
   return !["xmov", "xunfei"].includes(appState.asr.provider);
 });
-
-// ASR Hook - 使用computed确保配置更新时重新创建
-const asrConfig = computed(() => ({
-  provider: appState.asr.provider as AsrProvider,
-  appId: appState.asr.appId,
-  secretId: appState.asr.secretId,
-  secretKey: appState.asr.secretKey,
-}));
-
-// 初始化ASR hook（用于停止功能）
-const { stop: stopAsr } = useAsr(asrConfig.value);
 
 // 组件挂载时加载配置
 onMounted(() => {
@@ -285,7 +276,8 @@ function handleDisconnect() {
   appStore.disconnectAvatar();
   // 2. 断开ASR连接
   if (appState.asr.isListening) {
-    stopAsr();
+    stopCurrentAsr?.();
+    stopCurrentAsr = null;
     appStore.stopVoiceInput();
   }
   // 3. 断开LLM连接
@@ -295,8 +287,8 @@ function handleDisconnect() {
 
 function handleVoiceInput() {
   if (appState.asr.isListening) {
-    stopAsr();
-    // stopAsrWithConfig();
+    stopCurrentAsr?.();
+    stopCurrentAsr = null;
     appStore.stopVoiceInput();
     return;
   }
@@ -315,6 +307,7 @@ function handleVoiceInput() {
     secretId: appState.asr.secretId,
     secretKey: appState.asr.secretKey,
   });
+  stopCurrentAsr = stopAsrWithConfig;
 
   // 用于防止重复发送的标志
   const hasAutoSent = ref(false);
@@ -322,6 +315,7 @@ function handleVoiceInput() {
   const handleAsrFinished = async (text: string) => {
     appState.ui.text = text;
     stopAsrWithConfig();
+    stopCurrentAsr = null;
     appStore.stopVoiceInput();
 
     // 自动发送给大模型（防止重复发送）
@@ -343,6 +337,7 @@ function handleVoiceInput() {
   const handleAsrError = (error: any) => {
     console.error("语音识别错误:", error);
     stopAsrWithConfig();
+    stopCurrentAsr = null;
     appStore.stopVoiceInput();
     hasAutoSent.value = false;
   };
@@ -351,6 +346,7 @@ function handleVoiceInput() {
     onFinished: (text: string) => {
       appState.ui.text = text;
       stopAsrWithConfig();
+      stopCurrentAsr = null;
       appStore.stopVoiceInput();
     },
     onError: handleAsrError,

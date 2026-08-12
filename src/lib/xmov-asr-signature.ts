@@ -16,7 +16,13 @@ export function makeXmovAsrSignature(
   // 1. 对参数按 key 的 ASCII 码排序
   const sortedKeys = Object.keys(params).sort();
   const paramsStr = sortedKeys
-    .map((key) => `${key}=${params[key as keyof typeof params]}`)
+    .map((key) => {
+      const value =
+        key === "app_id"
+          ? encodeURIComponent(String(params.app_id))
+          : params.timestamp;
+      return `${key}=${value}`;
+    })
     .join("&");
 
   // 2. 使用 HMAC-SHA1 加密
@@ -59,7 +65,7 @@ export function makeXmovAsrSignature(
 export function makeXmovAsrUrl(
   appId: number | string,
   secret: string,
-  endpoint: string = "wss://asr-api.xingyun3d.com/ws/asr/"
+  endpoint: string = "wss://test-asr-api.xmov.ai/ws/asr/"
 ): string {
   const timestamp = Math.floor(Date.now() / 1000);
   const params = {
@@ -67,5 +73,5 @@ export function makeXmovAsrUrl(
     timestamp: timestamp,
   };
   const signature = makeXmovAsrSignature(params, secret);
-  return `${endpoint}?app_id=${appId}&timestamp=${timestamp}&signature=${signature}`;
+  return `${endpoint}?app_id=${encodeURIComponent(String(appId))}&timestamp=${timestamp}&signature=${signature}`;
 }

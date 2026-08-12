@@ -16,6 +16,7 @@ export class XmovSpeechRecognizer {
   private isRecognizeComplete = false;
   private sendCount = 0;
   private getMessageList: string[] = [];
+  private exceedRecord: string[] = [];
 
   // 回调函数
   public OnRecognitionStart: (res: any) => void = () => {};
@@ -24,6 +25,7 @@ export class XmovSpeechRecognizer {
   public OnSentenceEnd: (res: any) => void = () => {};
   public OnRecognitionComplete: (res: any) => void = () => {};
   public OnError: (res: any) => void = () => {};
+  public OnClose: (res: any) => void = () => {};
 
   // 连接成功后的回调（用于发送 start 信号）
   public onConnected?: () => void;
@@ -40,10 +42,18 @@ export class XmovSpeechRecognizer {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       // 发送停止信号
       const stopMessage = {
-        signal: "stop",
+        signal: "end",
       };
       this.socket.send(JSON.stringify(stopMessage));
-      this.isRecognizeComplete = true;
+      if (!this.isRecognizeComplete) {
+        this.OnRecognitionComplete({ code: 0, reason: "end" });
+        this.isRecognizeComplete = true;
+      }
+      setTimeout(() => {
+        if (this.socket?.readyState === WebSocket.OPEN) {
+          this.socket.close();
+        }
+      }, 300);
     } else if (this.socket) {
       this.socket.close();
     }
@@ -55,6 +65,10 @@ export class XmovSpeechRecognizer {
   async start(wsUrl: string) {
     this.socket = null;
     this.getMessageList = [];
+    this.exceedRecord = [];
+    this.isSignSuccess = false;
+    this.isRecognizeComplete = false;
+    this.isSentenceBegin = false;
 
     if ("WebSocket" in window) {
       this.socket = new WebSocket(wsUrl);
@@ -130,16 +144,18 @@ export class XmovSpeechRecognizer {
         if (data.type === "partial_result" || data.type === "final_result") {
           if (data.type === "partial_result") {
             // 部分结果
+            data.sentence = (this.exceedRecord.join("") || "") + (data.text || "");
+            this.exceedRecord.push(data.text || "");
             this.OnRecognitionResultChange(data);
           } else if (data.type === "final_result") {
             // 最终结果
+            data.sentence = data.text;
+            this.exceedRecord = [];
             if (!this.isSentenceBegin) {
               this.OnSentenceBegin(data);
               this.isSentenceBegin = true;
             }
             this.OnSentenceEnd(data);
-            this.OnRecognitionComplete(data);
-            this.isRecognizeComplete = true;
           }
           if (this.isLog) {
             console.log(this.requestId, data, "XmovSpeechRecognizer");
@@ -196,6 +212,8 @@ export class XmovSpeechRecognizer {
             );
           }
           this.OnError(event);
+        } else {
+          this.OnClose(event);
         }
       } catch (error) {
         if (this.isLog) {

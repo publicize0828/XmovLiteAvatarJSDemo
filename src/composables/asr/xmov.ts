@@ -52,7 +52,7 @@ export function createXmovRecognizer(
         const isLog = true;
 
         // 生成 WebSocket URL（带签名）
-        const wsBaseUrl = import.meta.env.XMOV_ASR_URL;
+        const wsBaseUrl = import.meta.env.VITE_XMOV_ASR_URL;
         const wsUrl = makeXmovAsrUrl(config.appId, config.secretKey, wsBaseUrl);
 
         console.log("xmovASR WebSocket URL:", wsUrl);
@@ -71,14 +71,14 @@ export function createXmovRecognizer(
         };
 
         speechRecognizer.OnRecognitionResultChange = (res: any) => {
-          if (res.text) {
-            asrText.value = res.text;
-            console.log("xmovASR识别中:", res.text);
+          if (res.sentence) {
+            asrText.value = res.sentence;
+            console.log("xmovASR识别中:", res.sentence);
           }
         };
 
         speechRecognizer.OnSentenceEnd = (res: any) => {
-          const resultText = res.text;
+          const resultText = res.sentence;
           console.log("xmovASR句子结束:", resultText);
           if (resultText) {
             asrText.value = resultText;
@@ -128,12 +128,6 @@ export function createXmovRecognizer(
           recorder.stop();
           callbacks.onError(error);
           isListening.value = false;
-        };
-
-        recorder.OnStop = () => {
-          if (speechRecognizer) {
-            speechRecognizer.stop();
-          }
         };
 
         // 设置连接成功回调（在收到 code=10020000 后执行）

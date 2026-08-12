@@ -103,6 +103,7 @@ const appStore = inject<AppStore>("appStore")!;
 const containerId = computed(() => avatarService.getContainerId());
 const isMobile = ref(window.innerWidth < 1024);
 const isPanelOpen = ref(false);
+let activeStop: (() => void) | null = null;
 
 function togglePanel() {
   isPanelOpen.value = !isPanelOpen.value;
@@ -171,6 +172,8 @@ function handleControl(action: string) {
 
 function handleVoiceInput() {
   if (appState.asr.isListening) {
+    activeStop?.();
+    activeStop = null;
     appStore.stopVoiceInput();
     return;
   }
@@ -178,21 +181,26 @@ function handleVoiceInput() {
     alert("请先配置ASR信息");
     return;
   }
-  const { start } = useAsr({
+  const { start, stop } = useAsr({
     provider: appState.asr.provider as AsrProvider,
     appId: appState.asr.appId,
     secretId: appState.asr.secretId,
     secretKey: appState.asr.secretKey,
   });
+  activeStop = stop;
   appStore.startVoiceInput({ onFinished: () => {}, onError: () => {} });
   start({
     onFinished: (text: string) => {
+      stop();
+      activeStop = null;
       appState.ui.text = text;
       appStore.stopVoiceInput();
       appStore.sendMessage();
       appState.ui.text = "";
     },
     onError: () => {
+      stop();
+      activeStop = null;
       appStore.stopVoiceInput();
     },
   });

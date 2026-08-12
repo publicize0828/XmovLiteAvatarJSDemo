@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly XMOV_ASR_URL?: string;
+  readonly VITE_XMOV_ASR_URL?: string;
   readonly XUNFEI_ASR_URL?: string;
   // SDK 配置（本地开发环境变量）
   readonly VITE_APP_ID?: string;
