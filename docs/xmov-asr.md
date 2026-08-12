@@ -27,7 +27,7 @@ XMOV ASR 是基于 WebSocket 的流式中文语音识别服务，支持边录音
 请求地址格式：
 
 ```text
-wss://test-asr-api.xmov.ai/ws/asr/?app_id=xxx&timestamp=xxx&signature=xxx
+wss://asr-api.xingyun3d.com/ws/asr//?app_id=xxx&timestamp=xxx&signature=xxx
 ```
 
 签名算法：
@@ -152,45 +152,6 @@ Client                              Server
 
 注意：SDK 在中间结果展示时会把已收到的 partial 文本拼接在前面，避免界面文字跳动；收到 `final_result` 后清空缓存。该拼接属于客户端展示行为，服务端文本以 `type` 字段区分。
 
-## 7. 配置项
-
-本仓库通过 `getMetaEnv` 读取配置，优先级为 Electron 的 `xmov_config.json` > `public/env.config.js` > `import.meta.env`。
-
-| 配置项 | 说明 | 默认值 |
-| --- | --- | --- |
-| `XMOV_WALLE_ASR_MODE` | 瓦力模式下 ASR 来源：`xmov` 使用本协议，`walle` 使用瓦力内置 ASR | 空（内置） |
-| `XMOV_WALLE_ASR_BASE_URL` | 瓦力模式下 XMOV ASR 服务地址 | `wss://test-asr-api.xmov.ai/ws/asr/` |
-| `XMOV_WALLE_ASR_APP_ID` | 瓦力模式下应用 ID | `2` |
-| `XMOV_WALLE_ASR_SECRET_KEY` | 瓦力模式下密钥 | `123456789` |
-| `XMOV_WALLE_ASR_HOT_WORD_LIST` | 瓦力模式下热词列表 | `[]` |
-| `XMOV_ASR_BASE_URL` | 独立接入时服务地址 | 同上 |
-| `XMOV_ASR_APP_ID` | 独立接入时应用 ID | 同上 |
-| `XMOV_ASR_SECRET_KEY` | 独立接入时密钥 | 同上 |
-| `XMOV_ASR_HOT_WORD_LIST` | 独立接入时热词列表 | `[]` |
-| `XMOV_ASR_KEYWORD_MAP` | 客户端结果关键词替换映射（JSON 对象） | `{}` |
-
-示例（`public/env.config.js` 或 `xmov_config.json`）：
-
-```json
-{
-  "XMOV_WALLE_ASR_MODE": "xmov",
-  "XMOV_WALLE_ASR_BASE_URL": "wss://test-asr-api.xmov.ai/ws/asr/",
-  "XMOV_WALLE_ASR_APP_ID": "2",
-  "XMOV_WALLE_ASR_SECRET_KEY": "123456789",
-  "XMOV_WALLE_ASR_HOT_WORD_LIST": ["小明", "灯"]
-}
-```
-
-关键词替换示例：
-
-```json
-{
-  "XMOV_ASR_KEYWORD_MAP": {
-    "灯开": "开灯",
-    "关灯了": "关灯"
-  }
-}
-```
 
 ## 8. 错误码
 
@@ -287,5 +248,3 @@ export class XmovAsrClient {
 2. `end` 发送后客户端延迟约 300ms 关闭连接，给服务端留出处理时间。
 3. 识别未结束时连接断开，客户端会触发 `10403` 错误。
 4. 一次连接对应一次识别会话；如需连续识别，可重新建立连接。
-5. 服务地址末尾的 `/` 需要保留：`wss://test-asr-api.xmov.ai/ws/asr/`。
-6. 测试环境的 `app_id = 2`、`secret_key = 123456789` 仅用于联调，正式环境请使用服务方分配的正式凭证。
